@@ -339,3 +339,5 @@ ASALocalRun/
 # BeatPulse healthcheck temp database
 healthchecksdb
 /PBNI/pbni190.chm
+/copy_dll.cmd
+*.chw
