@@ -7,7 +7,7 @@
 // Author: Arnd Schmidt
 
 #include "pch.h"
-#include "pbni\include\pbext.h"
+//#include "pbni\include\pbext.h"
 #include "CWebView2.h"
 
 #pragma warning(disable : 4786)
@@ -16,12 +16,15 @@ PBXEXPORT LPCTSTR PBXCALL PBX_GetDescription()
 {
 	static const TCHAR desc[] = {
 		L"class ux_webview2 from userobject\n"
+	//	L"INDIRECT string defaulURL{setdefaultuUrl(*value),getDefaultUrl()}\n"
+		L"subroutine setdefaultuUrl(string defaultURL)\n"
+		L"function string getDefaultUrl()\n"
 		L"event int onclick()\n"
 		L"event int ondoubleclick()\n"
 		L"function string getBrowserVersionString()\n"
 		L"function boolean CanGoBack()\n"
 		L"function boolean CanGoForward()\n"
-		L"function int CreateWebView(string config_json)\n"
+		L"function int CreateWebView(string config_JSON)\n"
 		L"function string DocumentTitle()\n"
 		L"function int Navigate(string uri)\n"
 		L"function int NavigateEx(string uri, string method, string headers, string postdata)\n"
@@ -55,7 +58,7 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	switch (reasonForCall)
 	{
 	case DLL_PROCESS_ATTACH:
-		//CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 		CWebView2::RegisterClass(HMODULE(hModule));
 		break;
 

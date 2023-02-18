@@ -73,13 +73,17 @@ public:
 	CWebView2 *pbWebView2;
 	pblonglong callerID;
 	boolean done;
+	HRESULT result;
 	std::wstring scriptResult;
+	std::wstring scriptError;
+	
 
 public:
 	CallbackInfo(CWebView2* pbWebView2, pblonglong callerID) {
 		this->pbWebView2 = pbWebView2;
 		this->callerID = callerID;
 		this->done = false;
+		this->result = S_OK;
 	}
 };
 
@@ -104,7 +108,7 @@ HWND CWebView2::CreateControl
 	d_hwnd = CreateWindowEx(dwExStyle, pbClassname, lpWindowName, dwStyle,
 		x, y, nWidth, nHeight, hWndParent, NULL, hInstance, NULL);
 
-	::SetWindowLong(d_hwnd, GWL_USERDATA, (LONG)this);
+	::SetWindowLongPtr(d_hwnd, GWLP_USERDATA, (LONG_PTR)this);
 
 	// create_webview();
 	// We have to wait for is_ready status!
@@ -152,7 +156,10 @@ PBXRESULT CWebView2::Invoke
 		return ExecuteScript2(ci);
 	case mid_ExecuteScriptSync:
 		return ExecuteScriptSync(ci);
-
+	case mid_setdefaultURL:
+		return PBX_OK;
+	case mid_getdefaultURL:
+		return PBX_OK;
 	// Notification-Events
 	case mid_OnClick:
 		return PBX_OK;
@@ -172,10 +179,8 @@ PBXRESULT CWebView2::Invoke
 		return PBX_OK;
 	case mid_WebMessageReceived:
 		return PBX_OK;
-
 	default:
-		// This is brutal!
-		return PBX_FAIL;
+		return PBX_E_INVOKE_METHOD_AMBIGUOUS;
 	}
 
 	return PBX_OK;
@@ -298,7 +303,6 @@ void CWebView2::TriggerEvent(LPCTSTR eventName)
 
 	d_session->FreeCallInfo(&ci);
 	d_session->PopLocalFrame();
-	
 }
 
 PBXRESULT CWebView2::CanGoBack(PBCallInfo* ci)
@@ -322,8 +326,20 @@ PBXRESULT CWebView2::Navigate(PBCallInfo* ci)
 	IPB_Arguments* args = ci->pArgs;
 	pbstring str = args->GetAt(0)->GetString();
 	if (str != NULL) {
-		HRESULT result = m_contentWebView->Navigate(d_session->GetString(str));
-		ci->returnValue->SetInt(result == S_OK ? 1 : -1);
+		//while ((this->is_ready == false) ) { Sleep(10); };
+
+		if (this->is_ready == false) 
+			ci->returnValue->SetInt(-8);
+		else {
+			if (m_contentWebView != nullptr) {
+				HRESULT result = m_contentWebView->Navigate(d_session->GetString(str));
+				ci->returnValue->SetInt(result == S_OK ? 1 : -1);
+			}
+			else {
+				ci->returnValue->SetInt(-7);
+			}
+		}
+	
 	}
 	else {
 		ci->returnValue->SetInt(0);
@@ -442,6 +458,7 @@ PBXRESULT CWebView2::ExecuteScriptSync(PBCallInfo* ci)
 				{
 					pblonglong callerID = callbackinfo->callerID;
 
+					callbackinfo->result = error;
 					if (error == S_OK) {
 						callbackinfo->scriptResult = result;
 					}
@@ -454,12 +471,13 @@ PBXRESULT CWebView2::ExecuteScriptSync(PBCallInfo* ci)
 	}
 	else {
 		ci->returnValue->SetInt(0);
+		return PBX_OK;
 	}
 	// The return string will be set by CExecuteScriptCompletedCallback::Invoke()
 	MSG sMsg;
 	do
 	{
-		GetMessage(&sMsg, nullptr, 1025, 1025);
+		GetMessage(&sMsg, nullptr, WM_USER + 1, WM_USER + 1);
 		TranslateMessage(&sMsg);
 		DispatchMessage(&sMsg);
 	} while (!(callbackinfo->done));
@@ -517,7 +535,7 @@ void CWebView2::UnregisterClass(HMODULE hModuleInstance)
 
 LRESULT CALLBACK CWebView2::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	CWebView2* ext = (CWebView2*)::GetWindowLong(hwnd, GWL_USERDATA);
+	CWebView2* ext = (CWebView2*)::GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
 	switch (uMsg)
 	{
@@ -527,15 +545,17 @@ LRESULT CALLBACK CWebView2::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 		return 0;
 
 	case WM_SIZE:
-		// WM_SIZE might trigger before WebControl is ready!		
+		// WM_SIZE can trigger before WebControl is ready!		
 		if ((ext != nullptr) && (ext->is_ready)) {
 
 			if (ext->m_contentController != nullptr) {
 				RECT bounds;
-				GetClientRect(ext->d_hwnd, &bounds);
+				GetClientRect(hwnd, &bounds);
 				ext->m_contentController->put_Bounds(bounds);
+				return 0;
 			};
 		};
+		PostMessageW(hwnd, uMsg, wParam, lParam);
 		return 0;
 
 	case WM_COMMAND:
@@ -552,7 +572,7 @@ LRESULT CALLBACK CWebView2::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
-
+/*
 LRESULT CWebView2::PostMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
 	return ::PostMessage(d_hwnd, message, wParam, lParam);
@@ -563,6 +583,7 @@ void CWebView2::RunAsync(CallbackFunc callback)
 	auto* task = new CallbackFunc(callback);
 	PostMessage(MSG_RUN_ASYNC_CALLBACK, reinterpret_cast<WPARAM>(task), 0);
 }
+*/
 
 HRESULT CWebView2::OnCreateEnvironmentCompleted(HRESULT result, ICoreWebView2Environment* environment)
 {
@@ -678,18 +699,23 @@ HRESULT CWebView2::OnCreateWebViewControllerCompleted( HRESULT result, ICoreWebV
 			m_contentController = controller;
 			m_contentController->get_CoreWebView2(&m_contentWebView);
 		}
+		else {
+			// Error Handling..
+			MessageBox(nullptr, L"Cannot get CoreWebView2", nullptr, MB_OK);
+		}
 		m_contentWebView->get_Settings(&m_webSettings);
-		m_webSettings->put_IsWebMessageEnabled(true);
-		this->is_ready = true;
+		m_webSettings->put_IsWebMessageEnabled(true);		
 		
 		RegisterEventCallbacks();
-
+		
 		// Quick and Dirty resize
 		if (m_contentController != nullptr) {
 			RECT bounds;
-			GetClientRect(d_hwnd, &bounds);
+			GetClientRect(this->d_hwnd, &bounds);
 			m_contentController->put_Bounds(bounds);
+			this->is_ready = true;
 		};
+		
 	}
 	else
 	{
@@ -717,6 +743,7 @@ PWSTR CWebView2::getuserdatafolder() {
 	PWSTR userDataFolder = NULL;
 	LPCWSTR addToPath = L"\\pbwebview2";
 	HRESULT hres;
+
 	// FOLDERID_UserProgramFiles
 	hres = SHGetKnownFolderPath(FOLDERID_UserProgramFiles, 0, nullptr, &userDataFolder);
 	if (SUCCEEDED(hres) && userDataFolder != NULL) {
@@ -725,7 +752,7 @@ PWSTR CWebView2::getuserdatafolder() {
 		size_t newbufsize = newlen * sizeof(WCHAR);
 
 		auto newPtr = CoTaskMemRealloc(userDataFolder, newbufsize);
-		if (!newPtr) {
+		if (!newPtr ) {
 			CoTaskMemFree(userDataFolder);
 			// Error Handling?!
 		}
@@ -743,6 +770,7 @@ void CWebView2::create_webview() {
 
 	PWSTR userDataFolder = getuserdatafolder();
 	PWSTR browserExecutableFolder = getbrowserExecutableFolder();
+	this->is_ready = false;
 	HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
 		browserExecutableFolder,
 		userDataFolder,
@@ -750,6 +778,7 @@ void CWebView2::create_webview() {
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
 			this,
 			&CWebView2::OnCreateEnvironmentCompleted).Get());
+
 	return;
 }
 
@@ -795,6 +824,7 @@ namespace cfgJSON {
 PBXRESULT CWebView2::CreateWebview(PBCallInfo* ci) {
 	using namespace cfgJSON;
 	IPB_Arguments* args = ci->pArgs;
+	this->is_ready = false;
 	// Get JSON String from Argument
 	std::wstring webViewConfig_strJSON = d_session->GetString(args->GetAt(0)->GetString());
 
@@ -813,7 +843,7 @@ PBXRESULT CWebView2::CreateWebview(PBCallInfo* ci) {
 
 	LPCWSTR	userdatafolder = (webViewConfig.userDataFolder.length() > 0) ? webViewConfig.userDataFolder.c_str() : getuserdatafolder();
 	LPCWSTR browserexecutablefolder = (webViewConfig.browserExecutableFolder.length() > 0) ? webViewConfig.browserExecutableFolder.c_str() : getbrowserExecutableFolder();
-	
+
 	HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
 		browserexecutablefolder,
 		userdatafolder,
@@ -822,7 +852,40 @@ PBXRESULT CWebView2::CreateWebview(PBCallInfo* ci) {
 			this,
 			&CWebView2::OnCreateEnvironmentCompleted).Get());
 
-	ci->returnValue->SetInt(0);
+	//MSG sMsg;
+	if (this->is_ready == false) {
+		ci->returnValue->SetInt(-8);
+	}
+	else {
+		ci->returnValue->SetInt(1);
+	}
+
+	// The return string will be set by CExecuteScriptCompletedCallback::Invoke()
+	//MSG sMsg;
+	//while(GetMessage(&sMsg, nullptr, WM_USER + 1, WM_USER + 1)) {
+	//	TranslateMessage(&sMsg);
+	//	DispatchMessage(&sMsg);
+	//} ;
+
+
+	//{
+	//	GetMessage(&sMsg, nullptr, WM_USER + 1, WM_USER + 1);
+//		TranslateMessage(&sMsg);
+		//DispatchMessage(&sMsg);
+	//} 
+	/*
+	auto hwnd = FindWindowEx(HWND_MESSAGE, this->d_hwnd, L"Chrome_MessageWindow", NULL); // This Window name is undocumented
+	MSG msg;
+	while ((this->is_ready == false) && GetMessage(&msg, hwnd, WM_USER + 1, WM_USER + 1))
+	{
+		// From observation, the Edge hidden window uses WM_USER + 1. Since there's no API access to the window, there's no
+		// way to be sure that only its messages are retrieved.
+	//	ASSERT(msg.message == WM_USER + 1);
+		TranslateMessage(&msg); // Probably not necessary for this scenario
+		DispatchMessage(&msg);
+	}
+	*/
+	
 	return PBX_OK;
 }
 

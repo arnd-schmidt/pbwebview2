@@ -8,8 +8,12 @@
 #define PCH_H
 
 // Fügen Sie hier Header hinzu, die vorkompiliert werden sollen.
-#include "framework.h"
+//#include "framework.h"
+#pragma once
 
+//#define WIN32_LEAN_AND_MEAN             // Selten verwendete Komponenten aus Windows-Headern ausschließen
+// Windows-Headerdateien
+#include <windows.h>
 #endif //PCH_H
 
 

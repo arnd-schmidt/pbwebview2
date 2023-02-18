@@ -1,5 +1,5 @@
 #pragma once
-#include "PBNI/include/pbext.h"
+#include "pbext.h"
 #include <wrl.h>
 #include <wil/com.h>
 #include "WebView2.h"
@@ -15,9 +15,12 @@ class CWebView2 :    public IPBX_VisualObject
 {
 	static TCHAR pbClassname[];
 
-	enum
+	enum PowerBuilder_Method_Identifier
 	{
-		mid_OnClick = 0, 
+
+		mid_setdefaultURL = 0,
+		mid_getdefaultURL,
+		mid_OnClick, 
 		mid_OnDoubleClick,
 		mid_getBrowserVersionString,
 		mid_CanGoBack,
@@ -62,7 +65,7 @@ private:
 
 	enum class CallbackType
 	{
-		CreationCompleted =0,
+		CreationCompleted = 0,
 		NavigationCompleted,
 		TitleChanged,
 	};
@@ -164,5 +167,5 @@ private:
 	void TriggerSourceChanged(LPCTSTR uri);
 	void RegisterEventCallbacks();
 
-	LRESULT PostMessage(UINT message, WPARAM wParam, LPARAM lParam);
+	//LRESULT PostMessage(UINT message, WPARAM wParam, LPARAM lParam);
 };
